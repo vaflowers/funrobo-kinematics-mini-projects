@@ -76,43 +76,106 @@ class FiveDOFRobot(FiveDOFRobotTemplate):
         #wrist center position
         piv_wrist = p_ee - (self.l4 + self.l5) * (r_ee @ np.array([0, 0, 1]))
         wrist_x, wrist_y, wrist_z = piv_wrist[0], piv_wrist[1], piv_wrist[2]
-        # calculate theta1 
-        theta1 = atan2(wrist_y, wrist_x)
+        # calculate theta1
+        solutions = []
+        theta_1_opts = [atan2(wrist_y, wrist_x), atan2(-wrist_y, -wrist_x)]
+        for theta1 in theta_1_opts:
+            # triangle 
+            r = wrist_x * cos(theta1) + wrist_y * sin(theta1)
+            s = wrist_z - self.l1 
+            L_sq = r**2 + s**2
+            
+            l2 = self.l2
+            l3 = self.l3
+            
+            # Law of Cosines
+            numerator = l2**2 + l3**2 - L_sq
+            denominator = 2 * l2 * l3
+            
+            # ensure target is reachable
+            if abs(numerator) > abs(denominator):
+                continue 
+                
+            cos_beta = numerator / denominator
+            beta = np.arccos(cos_beta)
+        
+            # theta 3 solutions
+            for theta_3_candidate in [np.pi - beta, -(np.pi - beta)]:
+                theta3 = theta_3_candidate
+                
+                # angular offset 
+                alpha = np.arctan2(l3 * np.sin(theta3), l2 + l3 * np.cos(theta3))
+
+                # angular trajectory 
+                gamma = np.arctan2(s, r)
+
+                # theta 2
+                theta2 = (np.pi / 2) - (gamma - alpha)
+                
+                # solve for wrist angles
+                q_list = [theta1, theta2, theta3, 0, 0]
+                
+                H_cumulative, _ = self.compute_transformation_matrices(q_list)
+                R3 = H_cumulative[3][:3, :3] 
+                
+                R_35 = R3.T @ r_ee
+                
+                theta4 = atan2(R_35[1, 2], R_35[0, 2])
+                theta5 = atan2(R_35[2, 0], R_35[2, 1])
+                
+                candidate_q = [theta1, theta2, theta3, theta4, theta5]
+                candidate_q = [self.normalized_angle(q) for q in candidate_q]
+                
+                # set limits
+                if ut.check_joint_limits(candidate_q, self.joint_limits):
+                    solutions.append(candidate_q)
+        def calc_error(q):
+            ee_curr, _ = self.calc_forward_kinematics(q)
+            return np.linalg.norm(np.array([ee.x - ee_curr.x, ee.y - ee_curr.y, ee.z - ee_curr.z]))
+        
+        solutions.sort(key=calc_error)
+        if not solutions:
+            return np.zeros(5)
+        if soln < len(solutions):
+            return solutions[soln]
+        return solutions[0]
+    
+        #theta1 = atan2(wrist_y, wrist_x)
         # create triangle from joint 2, joint 3, and wrist center
-        h_dist = sqrt(wrist_x**2 + wrist_y**2) 
-        v_dist = wrist_z - self.l1
-        hv_hype = h_dist**2 + v_dist**2
+        #h_dist = sqrt(wrist_x**2 + wrist_y**2) 
+        #v_dist = wrist_z - self.l1
+        #hv_hype = h_dist**2 + v_dist**2
         # calculate beta using law of cosines
-        l_2 = self.l2
-        l_3 = self.l3
-        cos_beta = np.clip((l_2**2 + l_3**2 - hv_hype) / (2 * l_2 * l_3), -1, 1)
-        beta = acos(cos_beta)
-        if soln == 0:
-            theta3 = np.pi - beta
-        else:
-            theta3 = -(np.pi - beta)
+        #l_2 = self.l2
+        #l_3 = self.l3
+        #cos_beta = np.clip((l_2**2 + l_3**2 - hv_hype) / (2 * l_2 * l_3), -1, 1)
+        #beta = acos(cos_beta)
+        #if soln == 0:
+        #    theta3 = np.pi - beta
+        #else:
+        #    theta3 = -(np.pi - beta)
 
         # angular offset 
-        alpha = atan2(l_3 * sin(theta3), l_2 + l_3 * cos(theta3))
+        #alpha = atan2(l_3 * sin(theta3), l_2 + l_3 * cos(theta3))
         # angular trajectory
-        gamma = atan2(v_dist, h_dist)
-        theta2 = (pi/2) - (gamma - alpha)
+        # gamma = atan2(v_dist, h_dist)
+        #theta2 = (pi/2) - (gamma - alpha)
         # calculate roatation from 3 to ee
-        q_list = [theta1, theta2, theta3, 0, 0]
-        H_cumulative, _ = self.compute_transformation_matrices(q_list)
-        R3 = H_cumulative[3][:3, :3]
-        R35 = R3.T @ r_ee
+        #q_list = [theta1, theta2, theta3, 0, 0]
+        #H_cumulative, _ = self.compute_transformation_matrices(q_list)
+        #R3 = H_cumulative[3][:3, :3]
+        #R35 = R3.T @ r_ee
         # calculate theta 4 and theta 5
-        theta4 = atan2(R35[1, 0], R35[0, 0])
-        theta5 = atan2(R35[2, 0], R35[2, 1])
+        #theta4 = atan2(R35[1, 2], R35[0, 2])
+        #theta5 = atan2(R35[2, 0], R35[2, 1])
 
-        curr_joint_vals = [theta1, theta2, theta3, theta4, theta5]
+        #curr_joint_vals = [theta1, theta2, theta3, theta4, theta5]
         #clip joints
-        curr_joint_vals = np.clip(curr_joint_vals,
-                                   [limit[0] for limit in self.joint_limits],
-                                   [limit[1] for limit in self.joint_limits]
-        )
-        return [self.normalized_angle(theta) for theta in curr_joint_vals]
+        #curr_joint_vals = np.clip(curr_joint_vals,
+        #                          [limit[0] for limit in self.joint_limits],
+        #                           [limit[1] for limit in self.joint_limits]
+        #)
+        #return [self.normalized_angle(theta) for theta in curr_joint_vals]
     
         # calculate angles
         #curr_joint_values = joint_values.copy()
