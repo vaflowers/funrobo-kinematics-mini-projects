@@ -62,53 +62,6 @@ class Kinova(KinovaRobotTemplate):
 
         return ee, Hlist
     
-    # def calc_inverse_kinematics(self, ee, init_joint_values, soln=0):
-    #     #currently does not account for multiple solns
-    #     #actually change the calcs for different thetas
-    #     d5 = self.l4 + self.l5
-    #     H0_6 = ut.euler_to_rotm((ee.rotx, ee.roty, ee.rotz))
-    #     w_x = ee.x - d5*H0_6[0,3]
-    #     w_y = ee.y - d5*H0_6[1,3]
-    #     w_z = ee.z - d5*H0_6[2,3]
-        
-    #     theta1a = math.atan2(ee.x, ee.y)
-    #     theta1b = math.atan2(ee.x, ee.y)
-        
-    #     r = math.sqrt(w_x**2 + w_y**2)
-    #     s = w_z - self.l1
-    #     theta3a = math.arccos((r**2 + s**2 - self.l3**2 - self.l4**2)/(2*self.l3*self.l4))
-    #     theta3b = math.arccos((r**2 + s**2 - self.l3**2 - self.l4**2)/(2*self.l3*self.l4))
-    #     theta2a = math.arcsin(((self.l3 + self.l4*math.cos(theta3))*s - self.l4*math.sin(theta3)*r)/(r**2 + s**2))
-    #     theta2b= math.arccos(((self.l3 + self.l4*math.cos(theta3))*r - self.l4*math.sin(theta3)*s)/(r**2 + s**2))
-        
-    #     if soln == 0:
-    #         theta1 = theta1a
-    #         theta2 = theta2a
-    #         theta3 = theta3a
-
-    #     elif soln == 1:
-    #         theta1 = theta1a
-    #         theta2 = theta2b
-    #         theta3 = theta3b
-
-    #     elif soln == 2:
-    #         theta1 = theta1b
-    #         theta2 = theta2a
-    #         theta3 = theta3a
-
-    #     elif soln == 3:
-    #         theta1 = theta1b
-    #         theta2 = theta2b
-    #         theta3 = theta3b
-        
-    #     R0_1 = self.Rz(theta1)@self.Ry(theta1)@self.Rx(theta1)
-    #     R1_2 = self.Rz(theta2)@self.Ry(theta2)@self.Rx(theta2)
-    #     R2_3 = self.Rz(theta3)@self.Ry(theta3)@self.Rx(theta3)
-    #     R0_3 = R0_1@R1_2@R2_3
-    #     R3_6 = R0_3.T @ R0_3
-    
-    #     theta5 = math.atan2(math.atan2(1-(math.sin(theta1)*H0_6[0])))
-    
     def calc_inverse_kinematics(self, ee, joint_values: list, radians=True, soln = 0):
            
             # position and rotation of end effector
