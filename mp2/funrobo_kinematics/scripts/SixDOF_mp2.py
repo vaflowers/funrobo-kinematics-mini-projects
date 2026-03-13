@@ -72,92 +72,75 @@ class Kinova(KinovaRobotTemplate):
             wrist_x, wrist_y, wrist_z = piv_wrist[0], piv_wrist[1], piv_wrist[2]
             # calculate theta1
             solutions = []
-            theta_1_opts = [atan2(wrist_y, wrist_x), atan2(-wrist_y, -wrist_x)]
-            for theta1 in theta_1_opts:
+            theta_1_opts = [(-atan2(wrist_y, wrist_x), sqrt(wrist_x**2 + wrist_y**2)),
+                            (-atan2(-wrist_y, -wrist_x), -sqrt(wrist_x**2 + wrist_y**2))]
+            for theta1, r_val in theta_1_opts:
                 # triangle
-                r = wrist_x * cos(theta1) + wrist_y * sin(theta1)
-                s = (self.l1 + self.l2) - wrist_z
+                r = r_val
+                s = wrist_z - (self.l1 + self.l2)
                 L_sq = r**2 + s**2
+                L = sqrt(L_sq)
                
-                l2 = self.l2
-                l3 = self.l3
+                l_ste = self.l3
+                l_etw = self.l4 + self.l5
                
                 # Law of Cosines
-                numerator = l2**2 + l3**2 - L_sq
-                denominator = 2 * l2 * l3
-               
                 # ensure target is reachable
-                if abs(numerator) > abs(denominator):
+                if L > (l_ste + l_etw) or L < abs(l_ste - l_etw):
                     continue
                    
-                cos_beta = numerator / denominator
-                beta = np.arccos(cos_beta)
+                gamma = atan2(s, r)
+               
+                cos_alpha = np.clip((l_ste**2 + L_sq - l_etw**2) / (2 * l_ste * L), -1.0, 1.0)
+                alpha = acos(cos_alpha)
+               
+                cos_beta = np.clip((l_ste**2 + l_etw**2 - L_sq) / (2 * l_ste * l_etw), -1.0, 1.0)
+                beta = acos(cos_beta)
            
                 # theta 3 solutions
-                for theta_3_candidate in [np.pi - beta, -(np.pi - beta)]:
-                    theta3 = theta_3_candidate + (np.pi / 2)
-                   
-                    # angular offset
-                    alpha = np.arctan2(l3 * np.sin(theta3), l2 + l3 * np.cos(theta3))
-
-                    # angular trajectory
-                    gamma = np.arctan2(s, r)
-
-                    # theta 2
-                    theta2 = (np.pi / 2) + (gamma - alpha)
+                for theta_2_candidate, theta_3_candidate in [(np.pi / 2 - (gamma - alpha), np.pi - beta),
+                                                             (np.pi / 2 - (gamma + alpha), -(np.pi - beta))]:
+                    theta2 = theta_2_candidate
+                    theta3 = theta_3_candidate
                    
                     # solve for wrist angles
-                    q_list = [theta1, theta2, theta3, 0, 0]
+                    q_temp = [theta1, theta2, theta3, 0, 0, 0]
                    
-                    H_cumulative, _ = self.compute_transformation_matrices(q_list)
-                    R3 = H_cumulative[3][:3, :3]
+                    H_cumulative, _ = self.compute_transformation_matrices(q_temp)
+                    R3 = H_cumulative[4][:3, :3]
                    
                     R36 = R3.T @ r_ee
                    
-                    theta6 = atan2(R36[2, 1], -R36[2, 0])
-                    theta5 = atan2(sqrt(R36[2,0]**2 + R36[2,1]**2), -R36[2,2])
-                    theta4 = atan2(R36[1, 2], R36[0, 2])
+                    c5 = -R36[2, 2]
+                    s5_mag = sqrt(np.clip(1 - c5**2, 0.0, 1.0))
                    
-                    candidate_q = [theta1, theta2, theta3, theta4, theta5, theta6]
-                    candidate_q = [self.normalized_angle(q) for q in candidate_q]
-                   
-                    # set limits
-                    if ut.check_joint_limits(candidate_q, self.joint_limits):
-                        solutions.append(candidate_q)
+                    for s5 in [s5_mag, -s5_mag]:
+                        theta5 = atan2(s5, c5)
+                       
+                        theta4 = atan2(-R36[1, 2], -R36[0, 2])
+                        theta6 = atan2(-R36[2, 1], -R36[2, 0])
+                       
+                        candidate_q = [theta1, theta2, theta3, theta4, theta5, theta6]
+                        candidate_q = [self.normalized_angle(q) for q in candidate_q]
+                       
+                        # set limits
+                        if ut.check_joint_limits(candidate_q, self.joint_limits):
+                            solutions.append(candidate_q)
+
             def calc_error(q):
                 ee_curr, _ = self.calc_forward_kinematics(q)
                 return np.linalg.norm(np.array([ee.x - ee_curr.x, ee.y - ee_curr.y, ee.z - ee_curr.z]))
            
             solutions.sort(key=calc_error)
             if not solutions:
-                return np.zeros(5)
+                return np.zeros(6)
             if soln < len(solutions):
                 return solutions[soln]
             return solutions[0]
-        
-    def compute_transformation_matrices(self, joint_values):
-    
-        theta = joint_values
-        DH = np.array([
-            [theta[0], self.l1, 0, -np.pi/2],
-            [theta[1]-(np.pi/2), 0, self.l2, np.pi],
-            [theta[2], 0, self.l3, np.pi],
-            [theta[3]+(np.pi/2), 0, 0, np.pi/2],
-            [theta[4], self.l4+self.l5, 0, 0]
-        ])
 
-        # compute transformation matrices for each joint
-        Hlist = [ut.dh_to_matrix(dh) for dh in DH] 
-
-        # compute cumulative transformations
-        H_cumulative = [np.eye(4)]
-        for H in Hlist:
-            H_cumulative.append(H_cumulative[-1] @ H)
-            
-        return H_cumulative, Hlist
-    
     def normalized_angle(self, angle):
-        return(angle + np.pi) % (2 * np.pi) - np.pi  
+        """Normalize an angle to the range (-pi, pi]."""
+        return (angle + np.pi) % (2 * np.pi) - np.pi  
         
     
         
